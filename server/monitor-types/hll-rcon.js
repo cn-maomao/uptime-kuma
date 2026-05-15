@@ -400,6 +400,11 @@ class HLLRconMonitorType extends MonitorType {
         heartbeat.msg = maxPlayerCount > 0
             ? `Players: ${playerCount}/${maxPlayerCount}`
             : `Players: ${playerCount}`;
+        // Reuse the heartbeat `ping` column as the time-series sample for the
+        // player-count chart, status pages, prometheus exporter and badge SVG.
+        // UI components that render this value as "ms" are switched to a
+        // "players" label when monitor.type === "hll-rcon".
+        heartbeat.ping = playerCount;
     }
 }
 

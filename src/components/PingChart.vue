@@ -147,7 +147,7 @@ export default {
                     y: {
                         title: {
                             display: true,
-                            text: this.$t("respTime"),
+                            text: this.isHllRcon ? this.$t("respPlayers") : this.$t("respTime"),
                         },
                         offset: false,
                         grid: {
@@ -182,7 +182,9 @@ export default {
                         callbacks: {
                             label: (context) => {
                                 const label = context.dataset.label;
-                                return `${label} ${new Intl.NumberFormat().format(context.parsed.y)} ms`;
+                                const value = new Intl.NumberFormat().format(context.parsed.y);
+                                const unit = this.isHllRcon ? "" : " ms";
+                                return `${label} ${value}${unit}`;
                             },
                         },
                     },
@@ -220,6 +222,12 @@ export default {
             } else {
                 return this.getChartDatapointsFromStats();
             }
+        },
+        isHllRcon() {
+            // HLL RCON monitors reuse heartbeat.ping as the live player count.
+            // Swap chart labels / units accordingly so the same line chart shows
+            // "Avg Players" instead of "Avg Ping", with no "ms" suffix.
+            return this.$root.monitorList?.[this.monitorId]?.type === "hll-rcon";
         },
     },
     watch: {
@@ -420,7 +428,7 @@ export default {
                         borderColor: "#4ABF74",
                         backgroundColor: "#4ABF7438",
                         yAxisID: "y",
-                        label: this.$t("avgPing"),
+                        label: this.isHllRcon ? this.$t("avgPlayers") : this.$t("avgPing"),
                     },
                     {
                         // Bar Chart
@@ -550,7 +558,7 @@ export default {
                         borderColor: "#126331",
                         backgroundColor: "#2F9C5914",
                         yAxisID: "y",
-                        label: this.$t("minPing"),
+                        label: this.isHllRcon ? this.$t("minPlayers") : this.$t("minPing"),
                     },
                     {
                         // average ping chart
@@ -560,7 +568,7 @@ export default {
                         borderColor: "#5CDD8B",
                         backgroundColor: "#5CDD8B06",
                         yAxisID: "y",
-                        label: this.$t("avgPing"),
+                        label: this.isHllRcon ? this.$t("avgPlayers") : this.$t("avgPing"),
                     },
                     {
                         // maximum ping chart
@@ -570,7 +578,7 @@ export default {
                         borderColor: "#21b55a",
                         backgroundColor: "#1E7A4214",
                         yAxisID: "y",
-                        label: this.$t("maxPing"),
+                        label: this.isHllRcon ? this.$t("maxPlayers") : this.$t("maxPing"),
                     },
                     {
                         // Bar Chart

@@ -208,7 +208,7 @@
                         <p class="col-4 col-sm-12 mb-0 mb-sm-2">({{ $t("Current") }})</p>
                         <span class="col-4 col-sm-12 num">
                             <a href="#" @click.prevent="showPingChartBox = !showPingChartBox">
-                                <CountUp :value="ping" />
+                                <CountUp :value="ping" :unit="pingUnit" />
                             </a>
                         </span>
                     </div>
@@ -219,7 +219,7 @@
                         <h4 class="col-4 col-sm-12">{{ pingTitle(true) }}</h4>
                         <p class="col-4 col-sm-12 mb-0 mb-sm-2">({{ $t("hours", 24) }})</p>
                         <span class="col-4 col-sm-12 num">
-                            <CountUp :value="avgPing" />
+                            <CountUp :value="avgPing" :unit="pingUnit" />
                         </span>
                     </div>
 
@@ -541,6 +541,13 @@ export default {
             return this.$t("notAvailableShort");
         },
 
+        pingUnit() {
+            // HLL RCON reuses heartbeat.ping as the live player count, so the
+            // "ms" suffix is misleading. The title above already says
+            // "Players" / "Avg. Players", so leave the value unitless.
+            return this.monitor?.type === "hll-rcon" ? "" : "ms";
+        },
+
         avgPing() {
             if (this.$root.avgPingList[this.monitor.id] || this.$root.avgPingList[this.monitor.id] === 0) {
                 return this.$root.avgPingList[this.monitor.id];
@@ -755,6 +762,11 @@ export default {
 
             if (this.monitor.type === "http" || this.monitor.type === "keyword" || this.monitor.type === "json-query") {
                 return this.$t(translationPrefix + "Response");
+            }
+
+            if (this.monitor.type === "hll-rcon") {
+                // HLL RCON monitor stores playerCount in heartbeat.ping
+                return this.$t(translationPrefix + "Players");
             }
 
             return this.$t(translationPrefix + "Ping");

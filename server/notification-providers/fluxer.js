@@ -194,10 +194,15 @@ class Fluxer extends NotificationProvider {
                                 },
                                 ...(heartbeatJSON["ping"] != null
                                     ? [
-                                          {
-                                              name: "Ping",
-                                              value: heartbeatJSON["ping"] + " ms",
-                                          },
+                                          monitorJSON["type"] === "hll-rcon"
+                                              ? {
+                                                    name: "Players",
+                                                    value: String(heartbeatJSON["ping"]),
+                                                }
+                                              : {
+                                                    name: "Ping",
+                                                    value: heartbeatJSON["ping"] + " ms",
+                                                },
                                       ]
                                     : []),
                             ],

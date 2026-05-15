@@ -44,7 +44,7 @@ class Feishu extends NotificationProvider {
                                 tag: "div",
                                 text: {
                                     tag: "lark_md",
-                                    content: getContent(heartbeatJSON),
+                                    content: getContent(heartbeatJSON, monitorJSON),
                                 },
                             },
                         ],
@@ -74,7 +74,7 @@ class Feishu extends NotificationProvider {
                                 tag: "div",
                                 text: {
                                     tag: "lark_md",
-                                    content: getContent(heartbeatJSON),
+                                    content: getContent(heartbeatJSON, monitorJSON),
                                 },
                             },
                         ],
@@ -92,12 +92,17 @@ class Feishu extends NotificationProvider {
 /**
  * Get content
  * @param {?object} heartbeatJSON Heartbeat details (For Up/Down only)
+ * @param {?object} monitorJSON Monitor details (used to switch labels for HLL RCON)
  * @returns {string} Return Successful Message
  */
-function getContent(heartbeatJSON) {
+function getContent(heartbeatJSON, monitorJSON) {
+    const isHllRcon = monitorJSON && monitorJSON["type"] === "hll-rcon";
+    const pingLine = isHllRcon
+        ? "**Players**: " + (heartbeatJSON["ping"] == null ? "N/A" : String(heartbeatJSON["ping"]))
+        : "**Ping**: " + (heartbeatJSON["ping"] == null ? "N/A" : heartbeatJSON["ping"] + " ms");
     return [
         "**Message**: " + heartbeatJSON["msg"],
-        "**Ping**: " + (heartbeatJSON["ping"] == null ? "N/A" : heartbeatJSON["ping"] + " ms"),
+        pingLine,
         `**Time (${heartbeatJSON["timezone"]})**: ${heartbeatJSON["localDateTime"]}`,
     ].join("\n");
 }

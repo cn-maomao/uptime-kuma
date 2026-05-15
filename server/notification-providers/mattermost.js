@@ -61,11 +61,17 @@ class Mattermost extends NotificationProvider {
                 color = "#FF0000";
             } else if (heartbeatJSON.status === UP) {
                 iconEmoji = mattermostIconEmojiOnline || mattermostIconEmoji;
-                statusField = {
-                    short: false,
-                    title: "Ping",
-                    value: heartbeatJSON.ping + "ms",
-                };
+                statusField = monitorJSON?.type === "hll-rcon"
+                    ? {
+                          short: false,
+                          title: "Players",
+                          value: String(heartbeatJSON.ping),
+                      }
+                    : {
+                          short: false,
+                          title: "Ping",
+                          value: heartbeatJSON.ping + "ms",
+                      };
                 statusText = "up!";
                 color = "#32CD32";
             }

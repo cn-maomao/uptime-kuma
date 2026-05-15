@@ -62,7 +62,7 @@ RCONv2 实现完全自包含，没有引入额外依赖：
 与上游 Uptime Kuma 完全一致，仅需注意首次启动时会自动执行新加的数据库迁移。
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/cn-maomao/uptime-kuma.git
 cd uptime-kuma
 npm run setup
 node server/server.js

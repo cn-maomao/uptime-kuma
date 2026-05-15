@@ -24,3 +24,31 @@ extra/exe-builder/obj
 
 .vs
 .vscode
+
+# ---- Extra ignores for this fork ----
+
+# All variants of env files (.env.local, .env.production, ...)
+.env*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Test / coverage output
+/coverage
+/test-results
+/playwright-report
+
+# Editor / OS leftovers
+*.swp
+*.swo
+Thumbs.db
+
+# Local notes & helper artifacts (Windsurf / Cascade workflows)
+progress.txt
+.windsurf/cache/
+
+# Release bundles that should not be committed
+dist.zip
+dist.tar.gz

@@ -39,12 +39,14 @@
 | 启用「人数过低」告警 | 开关。开启后下方「最低在线人数」生效 |
 | 最低在线人数 | 当前在线人数 < 此阈值即触发 DOWN |
 | 启用「短时间大量退出」告警 | 开关。开启后下方两项生效 |
-| 下降阈值（玩家数） | 在时间窗口内累计下降 ≥ 此阈值即触发 DOWN |
-| 时间窗口（秒） | 滑动窗口长度 |
+| 下降阈值（玩家数） | 时间窗口内服务器记录的 `DISCONNECTED` 事件数 ≥ 此阈值即触发 DOWN |
+| 时间窗口（秒） | 查询管理员日志的回看长度 |
 
-判定规则：每次心跳通过 RCONv2 拉取 `players` 列表，得到当前 `playerCount`；维护一个滑动窗口，窗口内**最大值 − 当前值**视为本窗口内的累计下降量。两个开关独立判定，**任一命中即 DOWN**。
+判定规则：
+- 心跳：每次 RCONv2 调用 `GetServerInformation { Name: "session" }`，读取响应里的 `playerCount` / `maxPlayerCount`（与 hll_rcon_tool 的 `get_slots()` 一致），消息显示 `Players: 当前/上限`。
+- 短时间大量退出：开启时再发一次 `GetAdminLog { LogBackTrackTime: 窗口秒, Filters: "disconnected" }`，对返回的 `entries` 中 `message` 以 `DISCONNECTED ` 开头的条目计数，达到阈值即 DOWN。两个开关独立判定，**任一命中即 DOWN**。
 
-> ⚠️ 滑动窗口状态仅保存在内存中（监控实例 `_hllPlayerHistory`），重启 Uptime Kuma 或编辑保存监控会清空，与其他有状态监控类型行为一致。
+> 鉴定完全依赖服务器自己的管理员日志，不在 Uptime Kuma 进程内维护任何滑动窗口状态，因此重启或编辑监控不会影响判定基线。
 
 ### 协议说明
 
@@ -53,7 +55,8 @@ RCONv2 实现完全自包含，没有引入额外依赖：
 - 12 字节小端报头：`magic(0xDE450508) | requestId | contentLength`
 - `ServerConnect` 取得 Base64 编码的 XOR 密钥；后续所有请求体都使用该密钥按字节循环 XOR
 - `Login` 使用密码作为 `contentBody` 取得 `authToken`
-- `GetServerInformation` 携带 `{"Name":"players","Value":""}` 取得在线玩家数组
+- `GetServerInformation` 携带 `{"Name":"session","Value":""}` 取得 `playerCount` / `maxPlayerCount` 等会话信息
+- `GetAdminLog` 携带 `{"LogBackTrackTime":N,"Filters":"disconnected"}` 拉取最近 N 秒内的 `DISCONNECTED` 事件
 
 详见 `server/monitor-types/hll-rcon.js`。协议规范来源于本仓库外的 [`doc/rconv2.md`](../doc/rconv2.md) 与 [`doc/connection.py`](../doc/connection.py)（HLL 项目根目录）。
 
@@ -137,12 +140,14 @@ When creating a monitor, pick **Monitor Type → Game Server → Hell Let Loose 
 | Alert on low player count | Enables the threshold below |
 | Minimum players | DOWN when current player count is below this value |
 | Alert on rapid player exits | Enables the two settings below |
-| Drop threshold (players) | DOWN when cumulative drop within the window meets this |
-| Time window (seconds) | Sliding-window length |
+| Drop threshold (players) | DOWN when the number of `DISCONNECTED` events recorded by the server in the window meets this |
+| Time window (seconds) | Admin-log lookback length |
 
-Algorithm: each heartbeat fetches the `players` list via RCONv2 and records the count in a per-monitor sliding window. The drop is computed as **max(window) − current**. The two switches are evaluated independently; **either match triggers DOWN**.
+Algorithm:
+- Heartbeat: each beat calls `GetServerInformation { Name: "session" }` and reads `playerCount` / `maxPlayerCount` (matching hll_rcon_tool's `get_slots()`), reporting `Players: <current>/<max>`.
+- Rapid-exit: when enabled, the monitor additionally calls `GetAdminLog { LogBackTrackTime: <windowSec>, Filters: "disconnected" }` and counts entries whose `message` starts with `DISCONNECTED `; if that count meets the threshold, the heartbeat is DOWN. The two switches are independent; **either match triggers DOWN**.
 
-> ⚠️ The sliding-window history lives in memory on the monitor instance (`_hllPlayerHistory`). It resets on restart or when the monitor is saved, matching the behaviour of other stateful monitor types.
+> Detection is fully driven by the server's admin log, with no in-process state. Restarting uptime-kuma or saving the monitor does not affect the baseline.
 
 ### Protocol notes
 
@@ -151,7 +156,8 @@ The RCONv2 implementation is fully self-contained, no extra runtime dependencies
 - 12-byte little-endian header: `magic(0xDE450508) | requestId | contentLength`
 - `ServerConnect` returns a Base64-encoded XOR key; all subsequent payloads are XOR-encrypted byte-by-byte against it
 - `Login` sends the password as `contentBody` and returns an `authToken`
-- `GetServerInformation` with `{"Name":"players","Value":""}` returns the live roster
+- `GetServerInformation` with `{"Name":"session","Value":""}` returns `playerCount`, `maxPlayerCount`, and other session fields
+- `GetAdminLog` with `{"LogBackTrackTime":N,"Filters":"disconnected"}` returns DISCONNECTED entries from the last N seconds
 
 See `server/monitor-types/hll-rcon.js`. Protocol reference lives in the parent project at `doc/rconv2.md` and `doc/connection.py`.
 

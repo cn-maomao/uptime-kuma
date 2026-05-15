@@ -577,7 +577,7 @@
     "hllMinPlayersDescription": "当前在线玩家数低于设定阈值时触发 DOWN。",
     "hllMinPlayers": "最低在线人数",
     "hllExitEnabled": "启用「短时间大量退出」告警",
-    "hllExitDescription": "在设定时间窗口内，玩家数累计下降达到或超过阈值时触发 DOWN。",
+    "hllExitDescription": "在设定时间窗口内，服务器管理员日志中 DISCONNECTED 事件数达到或超过阈值时触发 DOWN（来源：GetAdminLog）。",
     "hllExitDrop": "下降阈值（玩家数）",
     "hllExitWindowSec": "时间窗口（秒）",
     "Most likely causes:": "最可能的原因：",

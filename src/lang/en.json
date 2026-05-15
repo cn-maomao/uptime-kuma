@@ -463,7 +463,7 @@
     "hllMinPlayersDescription": "Trigger DOWN when the current player count drops below the configured threshold.",
     "hllMinPlayers": "Minimum players",
     "hllExitEnabled": "Alert on rapid player exits",
-    "hllExitDescription": "Trigger DOWN when the cumulative drop in player count within the time window meets or exceeds the threshold.",
+    "hllExitDescription": "Trigger DOWN when the number of DISCONNECTED events recorded in the server admin log within the time window meets or exceeds the threshold (source: GetAdminLog).",
     "hllExitDrop": "Drop threshold (players)",
     "hllExitWindowSec": "Time window (seconds)",
     "Most likely causes:": "Most likely causes:",

@@ -100,23 +100,69 @@ class HLLRconClient {
     }
 
     /**
-     * Get the list of currently connected players via GetServerInformation.
-     * Returns the parsed players array (may be empty).
-     * @returns {Promise<Array<object>>}
+     * Fetch session info via GetServerInformation { Name: "session" }.
+     * Returns { playerCount, maxPlayerCount } among other fields.
+     * Used as the lightweight heartbeat query (small fixed-shape payload),
+     * unlike `players` which can be very large under load.
+     * @returns {Promise<{playerCount: number, maxPlayerCount: number, raw: object}>}
      */
-    async getPlayers() {
-        const body = JSON.stringify({ Name: "players", Value: "" });
+    async getSession() {
+        const body = JSON.stringify({ Name: "session", Value: "" });
         const resp = await this._exchange("GetServerInformation", body, { encrypt: true, includeAuth: true });
         if (resp.statusCode !== 200) {
-            throw new Error(`GetServerInformation failed: ${resp.statusCode} ${resp.statusMessage}`);
+            throw new Error(`GetServerInformation(session) failed: ${resp.statusCode} ${resp.statusMessage}`);
         }
         let parsed;
         try {
             parsed = JSON.parse(resp.contentBody || "{}");
         } catch (e) {
-            throw new Error("Invalid JSON in players response");
+            throw new Error("Invalid JSON in session response");
         }
-        return Array.isArray(parsed.players) ? parsed.players : [];
+        const playerCount = Number(parsed.playerCount);
+        const maxPlayerCount = Number(parsed.maxPlayerCount);
+        if (!Number.isFinite(playerCount)) {
+            throw new Error("Session response missing numeric playerCount");
+        }
+        return {
+            playerCount,
+            maxPlayerCount: Number.isFinite(maxPlayerCount) ? maxPlayerCount : 0,
+            raw: parsed,
+        };
+    }
+
+    /**
+     * Count DISCONNECTED entries in the admin log within the given window.
+     * Calls GetAdminLog with Filters="disconnected" (server-side narrow) and
+     * additionally requires each entry's message to start with "DISCONNECTED "
+     * to avoid edge cases where the substring matches another action.
+     * @param {number} sinceSec Window length in seconds (must be >= 0)
+     * @returns {Promise<number>} Count of disconnect events in the window
+     */
+    async getDisconnectCountSince(sinceSec) {
+        const safeSeconds = Math.max(0, Math.floor(Number(sinceSec) || 0));
+        const body = JSON.stringify({
+            LogBackTrackTime: safeSeconds,
+            Filters: "disconnected",
+        });
+        const resp = await this._exchange("GetAdminLog", body, { encrypt: true, includeAuth: true });
+        if (resp.statusCode !== 200) {
+            throw new Error(`GetAdminLog failed: ${resp.statusCode} ${resp.statusMessage}`);
+        }
+        let parsed;
+        try {
+            parsed = JSON.parse(resp.contentBody || "{}");
+        } catch (e) {
+            throw new Error("Invalid JSON in admin log response");
+        }
+        const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+        let count = 0;
+        for (const entry of entries) {
+            const msg = entry && typeof entry.message === "string" ? entry.message : "";
+            if (msg.startsWith("DISCONNECTED ")) {
+                count += 1;
+            }
+        }
+        return count;
     }
 
     /**
@@ -273,14 +319,20 @@ class HLLRconClient {
 /**
  * Hell Let Loose RCONv2 monitor.
  *
- * Heartbeat reports current player count and (optionally) raises DOWN when:
- *  - low-population alert is enabled and player count < hllMinPlayers, or
- *  - rapid-exit alert is enabled and the cumulative drop in the configured
- *    sliding window is >= hllExitDrop.
+ * Heartbeat reports current player count via GetServerInformation { Name: "session" }
+ * (`playerCount` / `maxPlayerCount`), which is the lightweight, official endpoint
+ * used by hll_rcon_tool's `get_slots()`.
  *
- * Per-monitor state (player count history) is kept on the monitor instance
- * itself, so it persists across heartbeats and is reset when the monitor is
- * restarted (which matches uptime-kuma's lifecycle for other stateful types).
+ * Optionally raises DOWN when:
+ *  - low-population alert is enabled and player count < hllMinPlayers, or
+ *  - rapid-exit alert is enabled and the number of DISCONNECTED entries in the
+ *    server's admin log within the configured window is >= hllExitDrop.
+ *    The admin log is queried with GetAdminLog (Filters="disconnected",
+ *    LogBackTrackTime=hllExitWindowSec); each entry whose message starts with
+ *    "DISCONNECTED " is counted.
+ *
+ * No per-monitor state is needed: rapid-exit detection is fully driven by the
+ * server's own admin log, so restarts of uptime-kuma don't reset baselines.
  */
 class HLLRconMonitorType extends MonitorType {
     name = "hll-rcon";
@@ -304,54 +356,38 @@ class HLLRconMonitorType extends MonitorType {
         // but always leave at least a few seconds so logins can complete.
         const timeoutMs = Math.max(3000, Math.min(20000, interval * 1000 * 0.8));
 
-        const client = new HLLRconClient(monitor.hostname, Number(monitor.port), timeoutMs);
-        let playerCount;
-        try {
-            await client.connect();
-            await client.login(String(monitor.hllRconPassword));
-            const players = await client.getPlayers();
-            playerCount = players.length;
-        } catch (e) {
-            throw new Error(`HLL RCON check failed: ${e.message}`);
-        } finally {
-            client.close();
-        }
-
-        // Threshold parameters
+        // Threshold parameters (read up-front so we know whether we need the admin log call)
         const minEnabled = Boolean(monitor.hllMinPlayersEnabled);
         const minPlayers = Math.max(0, parseInt(monitor.hllMinPlayers, 10) || 0);
         const exitEnabled = Boolean(monitor.hllExitEnabled);
         const exitDrop = Math.max(0, parseInt(monitor.hllExitDrop, 10) || 0);
         const windowSec = Math.max(1, parseInt(monitor.hllExitWindowSec, 10) || 300);
 
-        // Update sliding history on the monitor instance.
-        const now = Date.now();
-        if (!Array.isArray(monitor._hllPlayerHistory)) {
-            monitor._hllPlayerHistory = [];
-        }
-        const history = monitor._hllPlayerHistory;
-        history.push({ ts: now, count: playerCount });
-        const cutoff = now - windowSec * 1000;
-        while (history.length > 0 && history[0].ts < cutoff) {
-            history.shift();
-        }
-        // Hard cap to avoid unbounded growth on misconfiguration.
-        if (history.length > 1024) {
-            history.splice(0, history.length - 1024);
-        }
-
-        let windowDrop = 0;
-        if (history.length >= 2) {
-            const maxInWindow = history.reduce((m, p) => (p.count > m ? p.count : m), history[0].count);
-            windowDrop = Math.max(0, maxInWindow - playerCount);
+        const client = new HLLRconClient(monitor.hostname, Number(monitor.port), timeoutMs);
+        let playerCount;
+        let maxPlayerCount = 0;
+        let disconnectsInWindow = 0;
+        try {
+            await client.connect();
+            await client.login(String(monitor.hllRconPassword));
+            const session = await client.getSession();
+            playerCount = session.playerCount;
+            maxPlayerCount = session.maxPlayerCount;
+            if (exitEnabled && exitDrop > 0) {
+                disconnectsInWindow = await client.getDisconnectCountSince(windowSec);
+            }
+        } catch (e) {
+            throw new Error(`HLL RCON check failed: ${e.message}`);
+        } finally {
+            client.close();
         }
 
         const reasons = [];
         if (minEnabled && playerCount < minPlayers) {
             reasons.push(`player count ${playerCount} is below threshold ${minPlayers}`);
         }
-        if (exitEnabled && exitDrop > 0 && windowDrop >= exitDrop) {
-            reasons.push(`${windowDrop} players left within the last ${windowSec}s (threshold ${exitDrop})`);
+        if (exitEnabled && exitDrop > 0 && disconnectsInWindow >= exitDrop) {
+            reasons.push(`${disconnectsInWindow} disconnects within the last ${windowSec}s (threshold ${exitDrop})`);
         }
 
         if (reasons.length > 0) {
@@ -361,7 +397,9 @@ class HLLRconMonitorType extends MonitorType {
         }
 
         heartbeat.status = UP;
-        heartbeat.msg = `Players: ${playerCount}`;
+        heartbeat.msg = maxPlayerCount > 0
+            ? `Players: ${playerCount}/${maxPlayerCount}`
+            : `Players: ${playerCount}`;
     }
 }
 

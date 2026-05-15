@@ -59,17 +59,49 @@ RCONv2 实现完全自包含，没有引入额外依赖：
 
 ### 安装与运行
 
-与上游 Uptime Kuma 完全一致，仅需注意首次启动时会自动执行新加的数据库迁移。
+> ⚠️ **不要**用上游 `npm run setup`，它会执行 `git checkout 2.3.2`，在本 fork 上没有这个 tag 且会拉走你的改动。本仓库提供了一键脚本。
 
-```bash
+**最快上路**（在仓库根目录执行）：
+
+```powershell
+# Windows PowerShell
 git clone https://github.com/cn-maomao/uptime-kuma.git
 cd uptime-kuma
-npm run setup
-node server/server.js
-# 或使用 PM2：pm2 start server/server.js --name uptime-kuma
+scripts\start.ps1
 ```
 
-Docker 部署、反向代理、升级流程等均参考上游文档：<https://github.com/louislam/uptime-kuma/wiki>。
+```cmd
+:: Windows cmd
+scripts\start.bat
+```
+
+```bash
+# Linux / macOS
+git clone https://github.com/cn-maomao/uptime-kuma.git
+cd uptime-kuma
+chmod +x scripts/*.sh
+scripts/start.sh
+```
+
+脚本会自动：① 缺失时 `npm install` ② `npm run build` 生成包含 HLL RCON 表单的前端 ③ `node server/server.js` 启动后端。首次启动会自动执行新加的数据库迁移。
+
+**开发联调（vite 热更新）**：
+
+| 平台 | 命令 |
+| --- | --- |
+| Windows PowerShell | `scripts\dev.ps1` |
+| Windows cmd | `scripts\dev.bat` |
+| Linux / macOS | `scripts/dev.sh` |
+
+或直接使用 npm 别名：
+
+```bash
+npm run fork:setup     # 安装依赖 + 构建一次
+npm run fork:start     # 构建 + 启动后端（生产）
+npm run fork:dev       # vite + server 热更新（开发）
+```
+
+后台守护、Docker 部署、反向代理、升级流程等均参考上游文档：<https://github.com/louislam/uptime-kuma/wiki>。
 
 ### 注意事项
 
@@ -125,17 +157,38 @@ See `server/monitor-types/hll-rcon.js`. Protocol reference lives in the parent p
 
 ### Install & run
 
-Same as upstream Uptime Kuma. The new DB migration runs automatically on first start.
+> ⚠️ **Do not run upstream `npm run setup`.** It executes `git checkout 2.3.2`, which does not exist on this fork and will discard the customisations. Use the bundled scripts below instead.
 
-```bash
-git clone <this-repo>
+**One-click** (run from the repo root):
+
+```powershell
+# Windows PowerShell
+git clone https://github.com/cn-maomao/uptime-kuma.git
 cd uptime-kuma
-npm run setup
-node server/server.js
-# or with PM2: pm2 start server/server.js --name uptime-kuma
+scripts\start.ps1
 ```
 
-Docker, reverse-proxy, and upgrade instructions: <https://github.com/louislam/uptime-kuma/wiki>.
+```bash
+# Linux / macOS
+git clone https://github.com/cn-maomao/uptime-kuma.git
+cd uptime-kuma
+chmod +x scripts/*.sh
+scripts/start.sh
+```
+
+The script will: ① run `npm install` if `node_modules/` is missing, ② run `npm run build` so the HLL RCON form is included in `dist/`, ③ launch `node server/server.js`. The new DB migration runs automatically on first start.
+
+**Dev mode (vite hot reload):** `scripts\dev.ps1` / `scripts\dev.bat` / `scripts/dev.sh`.
+
+Or via npm aliases:
+
+```bash
+npm run fork:setup     # install deps + build once
+npm run fork:start     # build + start backend (production)
+npm run fork:dev       # vite + backend with hot reload (development)
+```
+
+For PM2 / Docker / reverse-proxy / upgrade instructions, see the upstream wiki: <https://github.com/louislam/uptime-kuma/wiki>.
 
 ### Caveats
 
